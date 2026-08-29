@@ -106,6 +106,56 @@ def http_get(token, path, params=None):
         return r.status_code, {"raw": r.text[:400]}
 
 
+MEDIA_IMG = {"png", "jpg", "jpeg", "bmp", "gif", "webp"}
+MEDIA_VID = {"mp4", "webm", "mov", "mkv"}
+MEDIA_DOC = {"pdf", "docx", "doc", "xls", "xlsx", "ppt", "pptx", "csv", "txt", "md", "py"}
+
+
+def classify_media(name):
+    ext = name.rsplit(".", 1)[-1].lower() if "." in name else ""
+    if ext in MEDIA_IMG: return "image"
+    if ext in MEDIA_VID: return "video"
+    if ext in MEDIA_DOC: return "doc"
+    return "file"  # unknown/other -> maps to image_url? no: server/media=file is dropped
+
+
+def upload_file(token, path):
+    """POST /api/v1/files/ (multipart). Returns the uploaded file record.
+    NOTE: text/.txt media maps to 'text' which the SPA DROPS from chat attachment —
+    PDF (->doc) and images (->image) are read by GLM; plain .txt is not."""
+    from curl_cffi import requests as creq
+    import uuid as _uuid
+    p = Path(path)
+    if not p.exists():
+        return {"ok": False, "err": "no-file", "msg": f"not found: {path}"}
+    boundary = "----ZaiCLI" + _uuid.uuid4().hex
+    body = bytearray()
+    def add_field_body(name, filename, data, ctype):
+        body.extend(f"--{boundary}\r\n".encode())
+        body.extend(f'Content-Disposition: form-data; name="{name}"; filename="{filename}"\r\n'.encode())
+        body.extend(f"Content-Type: {ctype}\r\n\r\n".encode())
+        body.extend(data)
+        body.extend(b"\r\n")
+    add_field_body("file", p.name, p.read_bytes(), "application/octet-stream")
+    body.extend(f"--{boundary}--\r\n".encode())
+    r = creq.post(BASE + "/api/v1/files/",
+                  headers={"Authorization": f"Bearer {token}", "Accept": "application/json",
+                           "Content-Type": f"multipart/form-data; boundary={boundary}",
+                           "User-Agent": UA, "Origin": BASE},
+                  data=bytes(body), impersonate="chrome", timeout=60)
+    try:
+        j = r.json()
+    except Exception:
+        return {"ok": False, "err": "upload-failed", "status": r.status_code, "msg": r.text[:200]}
+    if not isinstance(j, dict) or not j.get("id"):
+        return {"ok": False, "err": "upload-failed", "status": r.status_code, "msg": j}
+    j["media"] = classify_media(p.name)
+    return {"ok": True, "id": j["id"], "filename": j.get("filename"), "media": j["media"],
+            "cdn_url": (j.get("meta") or {}).get("cdn_url"),
+            "content_block": {"type": "file_url" if j["media"] == "doc" else ("image_url" if j["media"] == "image" else "video_url"),
+                              "url": j["id"]}}
+
+
 # ---------------- commands ----------------
 def cmd_models(token, out):
     st, m = http_get(token, "/api/models")
@@ -176,6 +226,8 @@ def main():
     add("models", "list available GLM models")
     add("whoami", "auth profile / status").add_argument("--full", action="store_true")
     add("login", "open the browser to log in and persist the session + token")
+    up = add("upload", "upload a file/image to the chat (pure HTTP)")
+    up.add_argument("file", help="path to the file to upload")
     c = add("chats", "list chat history"); c.add_argument("--page", type=int, default=1); c.add_argument("--limit", type=int, default=15)
     add("folders", "list folders")
     add("tags", "list chat tags")
@@ -186,6 +238,8 @@ def main():
     ch = add("chat", "chat with GLM (browser-backed; captcha-gated by site)"); ch.add_argument("prompt", nargs="?")
     ch.add_argument("--model", default="x-preview-l"); ch.add_argument("--no-think", action="store_true")
     ch.add_argument("--effort", choices=["low", "high", "max"], default="max")
+    ch.add_argument("--file", action="append", default=[], help="attach a file/image (repeatable)")
+    ch.add_argument("--chat", default=None, help="chat id to continue (multi-turn)")
 
     a = ap.parse_args()
     if not a.cmd:
@@ -199,8 +253,11 @@ def main():
     if a.cmd == "login":
         # handled implicitly: if we got here there's already a token; otherwise login would have hit no-token
         print(json.dumps({"ok": True, "note": "logged in"}))
-
-    result = None
+        return
+    if a.cmd == "upload":
+        r = upload_file(token, a.file)
+        print(json.dumps(r))
+        return
     if a.cmd == "models":
         result = cmd_models(token, OUT_DIR)
     elif a.cmd == "whoami":
@@ -235,7 +292,8 @@ def main():
             sys.path.insert(0, str(Path(__file__).parent))
             import zai_chat
         result = zai_chat.run(a.prompt, model=a.model,
-                              no_think=a.no_think, effort=a.effort, token=token, profile=PROFILE)
+                              no_think=a.no_think, effort=a.effort, token=token, profile=PROFILE,
+                              files=a.file, chat_id=a.chat)
 
     if a.json:
         print(json.dumps(result))
