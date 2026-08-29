@@ -1,0 +1,6 @@
+*.pyc
+__pycache__/
+login-profile/
+out/
+token
+zai-chat.out
