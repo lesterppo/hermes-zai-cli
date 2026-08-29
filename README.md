@@ -37,9 +37,15 @@ zai --json pinned              # pinned chats
 zai --json settings            # user settings
 zai --json scene --model x-preview-l   # scene config / suggestion prompts
 zai sig '<prompt>'             # compute the X-Signature for a payload (debug/tools)
+zai upload <file>              # upload a file/image to chat (pure HTTP) -> file id + content_block
 
-zai chat "What is fibonacci(10)?"   # browser-backed; drag the slider when prompted
+zai chat "What is fibonacci(10)?"            # browser-backed; drag the slider when prompted
+zai chat --file report.pdf "Summarize this"  # attach a PDF/doc/image, GLM reads it
+zai chat --file shot.png "Describe this"     # image attachment (image_url)
+zai chat --chat <id> "and then what?"        # continue a chat (multi-turn context)
 ```
+`zai chat` prints the `chat_id` (or it's in the saved JSON `f`) — pass it to `--chat` to continue
+the same conversation so GLM remembers previous turns.
 
 Output contract — pointer JSON on stdout, full data to disk:
 
@@ -68,7 +74,16 @@ The Bearer token is read from the persistent browser profile `~/.zai-cli/login-p
   (Replicated from the frontend; verified working — but see the note below: it is NOT the gate.)
 - **Models**: `x-preview-l` (GLM-5.3-Flash), `glm-5.3`, `glm-5.2`, `GLM-5-Turbo`, `GLM-5v-Turbo`,
   `glm-4.7`, `glm-4.6v`, `GLM-4.5`, `GLM-4.5-Air`, `deep-research` (Z1-Rumination), `zero` (Z1-32B), …
+- **Upload** (pure HTTP, no captcha): `POST /api/v1/files/` multipart `file` → `{id}`.
+  Attach in a completion message as a content block:
+  - image (png/jpg/...): `{"type":"image_url","image_url":{"url":"<file_id>"}}`
+  - document (pdf/docx/xls/ppt/... and md/csv/py): `{"type":"file_url","file_url":{"url":"<file_id>"}}`
+  - video: `{"type":"video_url",...}`. GLM reads `file_url`/`image_url` bodies. NOTE: a
+    plain `.txt` maps to `text` media and is silently dropped from chat attachment — use PDF.
 - A pure-HTTP completion always returns `FRONTEND_CAPTCHA_REQUIRED` — the slider is authoritative.
+- **Multi-turn**: continue the same chat (same `chat_id`); the completion `messages[]` array
+  accumulates all prior user/assistant turns and GLM retains context (verified live: asked a color,
+  then "what color did I say?" → GLM repeated it).
 
 ## License
 
