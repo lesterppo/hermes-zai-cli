@@ -65,6 +65,7 @@ The Bearer token is read from the persistent browser profile `~/.zai-cli/login-p
   `data: {"type":"chat:completion","data":{"delta_content":"...","phase":"thinking"}}`.
 - **X-Signature** = `HMAC-SHA256( key=HMAC-SHA256("key-@@@@)))()((9))-xxxx&&&%%%%%", msg=floor(ts/300000) ),
   msg = "requestId:...,timestamp:...,user_id:..." + "|" + base64(token) + "|" + ts )` hex.
+  (Replicated from the frontend; verified working — but see the note below: it is NOT the gate.)
 - **Models**: `x-preview-l` (GLM-5.3-Flash), `glm-5.3`, `glm-5.2`, `GLM-5-Turbo`, `GLM-5v-Turbo`,
   `glm-4.7`, `glm-4.6v`, `GLM-4.5`, `GLM-4.5-Air`, `deep-research` (Z1-Rumination), `zero` (Z1-32B), …
 - A pure-HTTP completion always returns `FRONTEND_CAPTCHA_REQUIRED` — the slider is authoritative.
