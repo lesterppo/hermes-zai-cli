@@ -110,12 +110,16 @@ def http_get(token, path, params=None):
 def cmd_models(token, out):
     st, m = http_get(token, "/api/models")
     data = m.get("data", []) if isinstance(m, dict) else []
-    slim = [{"id": x.get("id"), "name": x.get("name"),
-             "think": (x.get("info", {}) or {}).get("meta", {}).get("think"),
-             "search": (x.get("info", {}) or {}).get("meta", {}).get("web_search"),
-             "vision": (x.get("info", {}) or {}).get("meta", {}).get("vision"),
-             "desc": ((x.get("info") or {}).get("description") or "")[:60]}
-            for x in data]
+    slim = []
+    for x in data:
+        info = x.get("info") or {}
+        meta = info.get("meta") or {}
+        caps = meta.get("capabilities") or {}
+        slim.append({"id": x.get("id"), "name": x.get("name"),
+                     "think": caps.get("think"), "search": caps.get("web_search"),
+                     "vision": caps.get("vision"), "reasoning": caps.get("reasoning_effort"),
+                     "think_effort": (info.get("info") or {}).get("thinking_effort_level") or meta.get("thinking_effort_level"),
+                     "desc": (info.get("description") or "")[:60]})
     f = out / f"models-{int(time.time())}.json"
     f.write_text(json.dumps(slim, indent=1))
     return {"ok": True, "f": str(f), "s": len(slim), "models": [x["id"] for x in slim]}
